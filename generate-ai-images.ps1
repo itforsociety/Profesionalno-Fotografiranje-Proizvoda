@@ -1,6 +1,6 @@
 param(
   [string]$OutDir = "assets/images",
-  [string]$Model = "flux"
+  [string]$Model = "sdxl"
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,18 +10,46 @@ if (-not (Test-Path $OutDir)) {
 }
 
 $images = @(
-  @{ File = "hero-cosmetics.jpg"; Prompt = "photorealistic commercial product photo, premium skincare bottle with box, centered on matte beige seamless backdrop, pro studio softbox lighting, 85mm lens, f/11, crisp edges, natural reflections, ecommerce hero shot, no people, no hands, no text, no watermark"; Seed = 12011 },
-  @{ File = "gallery-watch.jpg"; Prompt = "photorealistic studio product photography of a luxury wristwatch on acrylic stand, black to gray gradient background, controlled rim light, high contrast metal reflections, 100mm macro lens, f/13, sharp focus, no text, no logo overlay, no watermark"; Seed = 22021 },
-  @{ File = "gallery-headphones.jpg"; Prompt = "photorealistic product photo of modern over-ear wireless headphones, isolated on clean white seamless backdrop, soft shadow under product, catalog style lighting, 70mm lens, f/10, ultra sharp, no people, no text, no watermark"; Seed = 33031 },
-  @{ File = "gallery-skincare.jpg"; Prompt = "photorealistic beauty product photography, three skincare pump bottles arranged symmetrically on light stone pedestal, soft natural studio light, neutral background, high-end cosmetic campaign look, 90mm lens, no text, no watermark"; Seed = 44041 },
-  @{ File = "gallery-coffee.jpg"; Prompt = "photorealistic product photo of specialty coffee bag and cup on textured surface, warm studio lighting, clean composition, premium packaging focus, 85mm lens, f/8, commercial ecommerce style, no people, no text, no watermark"; Seed = 55051 }
+  @{ File = "hero-cosmetics.jpg"; Prompt = "ultra realistic commercial packshot, premium skincare bottle and box, centered composition, neutral seamless studio backdrop, clean softbox lighting, physically accurate shadows, high detail glass reflections, 85mm product lens look, not illustration, not painting, no text, no logo, no watermark"; Seed = 71011 },
+  @{ File = "gallery-watch.jpg"; Prompt = "ultra realistic studio product photo of luxury wristwatch, polished steel bracelet, acrylic stand, controlled rim lighting, dark gradient backdrop, macro sharpness, true-to-life materials, not illustration, not painting, no text, no watermark"; Seed = 72021 },
+  @{ File = "gallery-headphones.jpg"; Prompt = "ultra realistic ecommerce packshot of modern over-ear wireless headphones, isolated on white seamless background, balanced soft studio light, realistic shadow below product, crisp edges, not illustration, not painting, no text, no watermark"; Seed = 73031 },
+  @{ File = "gallery-skincare.jpg"; Prompt = "ultra realistic beauty product photography, three cosmetic pump bottles on stone pedestal, clean minimal set design, soft diffused studio light, premium campaign quality, natural reflections, not illustration, not painting, no text, no watermark"; Seed = 74041 },
+  @{ File = "gallery-coffee.jpg"; Prompt = "ultra realistic product photo of specialty coffee bag with cup and beans, premium packaging focus, warm studio light, clean tabletop styling, high detail texture, not illustration, not painting, no text, no watermark"; Seed = 75051 }
 )
 
+$fallbackModels = @($Model, "sdxl", "flux", "turbo") | Select-Object -Unique
+
 foreach ($img in $images) {
-  $uPrompt = [uri]::EscapeDataString($img.Prompt)
-  $url = "https://image.pollinations.ai/prompt/$uPrompt?model=$Model&width=1400&height=1400&seed=$($img.Seed)&nologo=true"
   $target = Join-Path $OutDir $img.File
-  Invoke-WebRequest -Uri $url -Headers @{ "Accept" = "image/jpeg" } -OutFile $target
+  $saved = $false
+
+  foreach ($candidateModel in $fallbackModels) {
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+      $seed = $img.Seed + ($attempt * 13)
+      $uPrompt = [uri]::EscapeDataString($img.Prompt)
+      $url = "https://image.pollinations.ai/prompt/$uPrompt?model=$candidateModel&width=1400&height=1400&seed=$seed&nologo=true"
+
+      try {
+        Invoke-WebRequest -Uri $url -Headers @{ "Accept" = "image/jpeg" } -OutFile $target
+        $size = (Get-Item $target).Length
+        if ($size -gt 60000) {
+          Write-Host "Saved $($img.File) with model=$candidateModel seed=$seed size=$size"
+          $saved = $true
+          break
+        }
+      } catch {
+        Write-Host "Retrying $($img.File) model=$candidateModel seed=$seed"
+      }
+    }
+
+    if ($saved) {
+      break
+    }
+  }
+
+  if (-not $saved) {
+    throw "Failed to generate image: $($img.File)"
+  }
 }
 
 Write-Host "AI image generation complete."
